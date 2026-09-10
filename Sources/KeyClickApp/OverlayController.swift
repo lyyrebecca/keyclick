@@ -151,9 +151,12 @@ final class MarkerDotView: NSView {
             halo.stroke()
         }
         // Keep this Core Text attribute dictionary deliberately minimal.
-        // macOS 26 intermittently throws an Objective-C exception while
-        // bridging the paragraph-style entry during rapid overlay redraws.
-        let font = NSFont.monospacedSystemFont(ofSize: max(12, bounds.height * 0.46), weight: .bold)
+        // On this macOS build `monospacedSystemFont` can yield an Objective-C
+        // nil despite its imported non-optional Swift type.  Passing it to
+        // NSString drawing aborts the whole process.  The standard system
+        // font is guaranteed by AppKit and is already used safely elsewhere
+        // in this overlay.
+        let font = NSFont.systemFont(ofSize: max(12, bounds.height * 0.46), weight: .bold)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.white
