@@ -33,10 +33,11 @@ lipo -create "$BUILD_DIR/arm64/KeyClick" "$BUILD_DIR/x86_64/KeyClick" -output "$
 cp Info.plist "$APP/Contents/Info.plist"
 cp Assets/KeyClick.icns "$APP/Contents/Resources/KeyClick.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
-# The app's locally ad-hoc signature is intentionally finalized before users
-# grant macOS privacy permissions.  Do not mutate the installed bundle after
-# it has been authorized, because macOS correctly treats that as a new build.
-codesign --force --deep --sign - "$APP"
+# Keep macOS privacy grants tied to the bundle identifier across ordinary
+# updates.  A default ad-hoc signature has a changing cdhash requirement,
+# which makes TCC treat every rebuilt copy as a different client.
+codesign --force --deep --sign - --identifier com.beka.keyclick \
+  --requirements '=designated => identifier "com.beka.keyclick"' "$APP"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 codesign --verify --deep --strict "$APP"
 ARCH_OUTPUT="$(lipo -archs "$APP/Contents/MacOS/KeyClick")"

@@ -36,6 +36,15 @@ import Testing
     #expect(result.settings == .empty)
 }
 
+@Test func v1SettingsMigrateWithoutDiscardingLayouts() throws {
+    let source = """
+    {"schemaVersion":1,"profiles":[],"activeProfileID":null,"toggleShortcut":"controlOptionK","launchAtLogin":false,"markerOpacity":0.56,"markerSize":32}
+    """
+    let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(source.utf8))
+    #expect(decoded.schemaVersion == 1)
+    #expect(!decoded.ignorePermissionStatus)
+}
+
 @Test func focusLossAlwaysDisarms() {
     var state = InteractionState(); state.arm(canArm: true); state.targetLost()
     #expect(state.mode == .standby)

@@ -70,8 +70,19 @@ private struct SettingsView: View {
             VStack(alignment: .leading, spacing: 7) {
                 permissionRow("辅助功能：跟踪窗口并执行点击", granted: controller.accessibilityGranted) { controller.openAccessibilitySettings() }
                 permissionRow("输入监控：监听并拦截键盘按键", granted: controller.inputMonitoringGranted) { controller.openInputMonitoringSettings() }
-                Button("重新检查权限") { controller.refreshPermissions() }
+                HStack(spacing: 12) {
+                    Button("重新检查权限") { controller.refreshPermissions() }
+                        .buttonStyle(.link)
+                    Button(controller.settings.ignorePermissionStatus ? "停止跳过检测" : "状态不正确？仍然尝试使用") {
+                        controller.setIgnorePermissionStatus(!controller.settings.ignorePermissionStatus)
+                    }
                     .buttonStyle(.link)
+                }
+                if controller.settings.ignorePermissionStatus {
+                    Label("已跳过授权状态检测：不会把未确认权限显示为已授权，会直接尝试显示浮标、监听按键和执行点击。", systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
             .padding(.vertical, 3)
         }
@@ -81,7 +92,7 @@ private struct SettingsView: View {
         HStack {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(granted ? .green : .orange)
-            Text(title)
+            Text(title + (!granted && controller.settings.ignorePermissionStatus ? "（未确认，已跳过检测）" : ""))
             Spacer()
             if !granted { Button("前往授权", action: action).buttonStyle(.bordered) }
         }

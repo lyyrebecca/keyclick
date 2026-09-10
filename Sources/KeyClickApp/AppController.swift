@@ -19,6 +19,7 @@ final class AppController: NSObject, ObservableObject {
     @Published private(set) var statusMessage = "准备就绪"
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var inputMonitoringGranted = false
+    @Published private(set) var compatibilityKeyboardMonitorActive = false
 
     private let store: ProfileStore
     private let tracker = WindowTracking()
@@ -53,8 +54,16 @@ final class AppController: NSObject, ObservableObject {
             if self.permissionRefreshPending {
                 self.permissionRefreshPending = false
                 self.updatePermissionStatus()
-            } else if !available {
+            } else if !available && !self.settings.ignorePermissionStatus {
                 self.statusMessage = "未获得输入监控权限，无法监听按键"
+            }
+            self.updateMenu()
+        }
+        keyboard.onCompatibilityMonitorChanged = { [weak self] active in
+            guard let self else { return }
+            self.compatibilityKeyboardMonitorActive = active
+            if active && self.settings.ignorePermissionStatus {
+                self.statusMessage = "已跳过授权状态检测：正在用兼容键盘监听尝试运行（映射键可能仍会传给目标软件）"
             }
             self.updateMenu()
         }
@@ -66,6 +75,7 @@ final class AppController: NSObject, ObservableObject {
     func launch() {
         let loaded = store.load()
         settings = loaded.settings
+        if settings.schemaVersion < 2 { settings.schemaVersion = 2 }
         unstackLegacyMarkersIfNeeded()
         if loaded.settings != settings { persist() }
         accessibilityGranted = AXIsProcessTrusted()
@@ -152,6 +162,10 @@ final class AppController: NSObject, ObservableObject {
     }
 
     private func updatePermissionStatus() {
+        if settings.ignorePermissionStatus {
+            statusMessage = permissionBypassDescription
+            return
+        }
         if accessibilityGranted && inputMonitoringGranted {
             statusMessage = "权限已可用：现在可显示并拖动浮标"
         } else if !accessibilityGranted && !inputMonitoringGranted {
@@ -161,6 +175,32 @@ final class AppController: NSObject, ObservableObject {
         } else {
             statusMessage = "辅助功能已可用；仍需开启输入监控权限"
         }
+    }
+
+    private var permissionBypassDescription: String {
+        if accessibilityGranted && inputMonitoringGranted {
+            return "权限已可用；“跳过检测”已开启但当前无需使用"
+        }
+        if compatibilityKeyboardMonitorActive {
+            return "已跳过授权状态检测：直接尝试使用（兼容键盘监听，映射键可能仍传给目标软件）"
+        }
+        return "已跳过授权状态检测：将直接尝试显示浮标、监听按键和执行点击"
+    }
+
+    func setIgnorePermissionStatus(_ enabled: Bool) {
+        settings.ignorePermissionStatus = enabled
+        persist()
+        // Rebuild both mechanisms, then allow the Quartz and NSEvent
+        // compatibility routes to try even when TCC's status APIs disagree.
+        keyboard.restart()
+        configureTracking()
+        if enabled {
+            statusMessage = permissionBypassDescription
+        } else {
+            refreshPermissions()
+            return
+        }
+        updateMenu()
     }
 
     func bindCurrentFrontApplication() {
@@ -278,7 +318,7 @@ final class AppController: NSObject, ObservableObject {
 
     func beginEditing() {
         guard let profile = activeProfile else { statusMessage = "请先绑定一个目标应用"; updateMenu(); return }
-        guard accessibilityGranted else {
+        guard accessibilityGranted || settings.ignorePermissionStatus else {
             statusMessage = "浮标需要“辅助功能”权限；请先点“前往授权”打开 KeyClick 开关"
             updateMenu(); return
         }
@@ -327,13 +367,19 @@ final class AppController: NSObject, ObservableObject {
 
     func toggleArmed() {
         if mode == .armed { disarm(message: "已退出点击模式"); return }
-        guard accessibilityGranted, inputMonitoringGranted,
+        let permissionAllowsAttempt = settings.ignorePermissionStatus || (accessibilityGranted && inputMonitoringGranted)
+        guard permissionAllowsAttempt,
               let profile = activeProfile, !profile.markers.isEmpty, currentSnapshot != nil else {
-            statusMessage = "需先授予权限、绑定并打开目标窗口"; updateMenu(); return
+            statusMessage = settings.ignorePermissionStatus
+                ? "请先绑定并切换到目标窗口，再开启点击模式"
+                : "需先授予权限、绑定并打开目标窗口"
+            updateMenu(); return
         }
         state.arm(canArm: true); mode = state.mode
         reconfigureKeyboard(); refreshOverlay()
-        statusMessage = "点击模式已开启：直接按浮标数字或字母；Esc 退出"
+        statusMessage = settings.ignorePermissionStatus && compatibilityKeyboardMonitorActive
+            ? "点击模式已开启：兼容监听中，按浮标按键尝试点击；映射键可能仍传给目标软件；Esc 退出"
+            : "点击模式已开启：直接按浮标数字或字母；Esc 退出"
         updateMenu()
     }
 

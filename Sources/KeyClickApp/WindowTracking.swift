@@ -20,6 +20,10 @@ final class WindowTracking: NSObject {
     private var bundleIdentifier: String?
     private var observer: AXObserver?
     private var workspaceObserver: NSObjectProtocol?
+    /// When TCC reports Accessibility incorrectly, Quartz still exposes the
+    /// geometry of the frontmost application's normal window.  Polling is a
+    /// compatibility fallback only; AXObserver remains the preferred route.
+    private var compatibilityTimer: Timer?
     private var observedPID: pid_t = 0
     private var observedWindow: AXUIElement?
 
@@ -31,6 +35,9 @@ final class WindowTracking: NSObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        compatibilityTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
         refresh()
     }
 
@@ -39,6 +46,8 @@ final class WindowTracking: NSObject {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
         }
         workspaceObserver = nil
+        compatibilityTimer?.invalidate()
+        compatibilityTimer = nil
         if let observer {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         }
@@ -48,20 +57,46 @@ final class WindowTracking: NSObject {
     }
 
     func refresh() {
-        guard AXIsProcessTrusted(),
-              let bundleIdentifier,
+        guard let bundleIdentifier,
               let app = NSWorkspace.shared.frontmostApplication,
               app.bundleIdentifier == bundleIdentifier,
               !app.isTerminated else {
             onTargetLost?()
             return
         }
-        guard let (snapshot, window) = snapshot(for: app) else {
+        if AXIsProcessTrusted(), let (snapshot, window) = snapshot(for: app) {
+            installObserverIfNeeded(for: app.processIdentifier, window: window)
+            onWindowChanged?(snapshot)
+            return
+        }
+        // Do not make an unconfirmed AX status a hard block.  This path also
+        // keeps an overlay aligned after a move/resize while the app is in
+        // “still try” mode.  It uses no screenshot pixels or screen-recording
+        // API, only normal Quartz window metadata.
+        guard let snapshot = compatibilitySnapshot(for: app) else {
             onTargetLost?()
             return
         }
-        installObserverIfNeeded(for: app.processIdentifier, window: window)
         onWindowChanged?(snapshot)
+    }
+
+    private func compatibilitySnapshot(for app: NSRunningApplication) -> WindowSnapshot? {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[CFString: Any]] else { return nil }
+        let candidates = windows.compactMap { info -> (CGRect, String)? in
+            guard (info[kCGWindowOwnerPID] as? NSNumber)?.int32Value == app.processIdentifier,
+                  (info[kCGWindowLayer] as? NSNumber)?.intValue == 0,
+                  (info[kCGWindowIsOnscreen] as? NSNumber)?.boolValue != false,
+                  let bounds = info[kCGWindowBounds] as? NSDictionary,
+                  let frame = CGRect(dictionaryRepresentation: bounds),
+                  frame.width > 1, frame.height > 1 else { return nil }
+            let title = (info[kCGWindowName] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                ?? app.localizedName ?? app.bundleIdentifier ?? "目标窗口"
+            return (frame, title)
+        }
+        guard let best = candidates.max(by: { $0.0.width * $0.0.height < $1.0.width * $1.0.height }) else { return nil }
+        return WindowSnapshot(bundleIdentifier: app.bundleIdentifier ?? "", pid: app.processIdentifier,
+                              frame: best.0, overlayFrame: appKitFrame(forAccessibilityFrame: best.0), title: best.1)
     }
 
     private func snapshot(for app: NSRunningApplication) -> (WindowSnapshot, AXUIElement)? {

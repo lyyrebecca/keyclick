@@ -90,8 +90,12 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var launchAtLogin: Bool
     public var markerOpacity: Double
     public var markerSize: Double
+    /// Lets a user continue with the compatibility paths when macOS's TCC
+    /// status query is stale or tied to a previous app signature.  This never
+    /// changes the reported permission state; it only removes the UI gate.
+    public var ignorePermissionStatus: Bool
 
-    public init(schemaVersion: Int = 1, profiles: [ClickProfile] = [], activeProfileID: UUID? = nil, toggleShortcut: ToggleShortcut = .controlOptionK, launchAtLogin: Bool = false, markerOpacity: Double = 0.56, markerSize: Double = 32) {
+    public init(schemaVersion: Int = 2, profiles: [ClickProfile] = [], activeProfileID: UUID? = nil, toggleShortcut: ToggleShortcut = .controlOptionK, launchAtLogin: Bool = false, markerOpacity: Double = 0.56, markerSize: Double = 32, ignorePermissionStatus: Bool = false) {
         self.schemaVersion = schemaVersion
         self.profiles = profiles
         self.activeProfileID = activeProfileID
@@ -99,6 +103,27 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.launchAtLogin = launchAtLogin
         self.markerOpacity = markerOpacity.clamped(to: 0.2...1)
         self.markerSize = markerSize.clamped(to: 24...56)
+        self.ignorePermissionStatus = ignorePermissionStatus
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, profiles, activeProfileID, toggleShortcut, launchAtLogin
+        case markerOpacity, markerSize, ignorePermissionStatus
+    }
+
+    /// Existing v1 configuration files do not contain the opt-in bypass.
+    /// Decode them deliberately instead of treating a safe schema upgrade as
+    /// a corrupt configuration and discarding the user's layouts.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try values.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        profiles = try values.decodeIfPresent([ClickProfile].self, forKey: .profiles) ?? []
+        activeProfileID = try values.decodeIfPresent(UUID.self, forKey: .activeProfileID)
+        toggleShortcut = try values.decodeIfPresent(ToggleShortcut.self, forKey: .toggleShortcut) ?? .controlOptionK
+        launchAtLogin = try values.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        markerOpacity = (try values.decodeIfPresent(Double.self, forKey: .markerOpacity) ?? 0.56).clamped(to: 0.2...1)
+        markerSize = (try values.decodeIfPresent(Double.self, forKey: .markerSize) ?? 32).clamped(to: 24...56)
+        ignorePermissionStatus = try values.decodeIfPresent(Bool.self, forKey: .ignorePermissionStatus) ?? false
     }
 
     public static let empty = AppSettings()
