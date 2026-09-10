@@ -30,6 +30,9 @@ final class AppController: NSObject, ObservableObject {
     private var editRequested = false
     private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem?
+    /// The actual event-tap result is authoritative for Input Monitoring.
+    /// Apple's preflight query can be stale after a System Settings change.
+    private var permissionRefreshPending = false
 
     override init() {
         store = ProfileStore()
@@ -44,8 +47,15 @@ final class AppController: NSObject, ObservableObject {
         keyboard.onMarker = { [weak self] id in self?.trigger(markerID: id) }
         keyboard.onAvailabilityChanged = { [weak self] available in
             guard let self else { return }
-            self.inputMonitoringGranted = available && CGPreflightListenEventAccess()
-            if !available { self.statusMessage = "未获得输入监控权限，无法监听按键" }
+            // A successfully-created event tap is the same mechanism used for
+            // capture below, and is more reliable than a stale preflight read.
+            self.inputMonitoringGranted = available
+            if self.permissionRefreshPending {
+                self.permissionRefreshPending = false
+                self.updatePermissionStatus()
+            } else if !available {
+                self.statusMessage = "未获得输入监控权限，无法监听按键"
+            }
             self.updateMenu()
         }
         tracker.onWindowChanged = { [weak self] snapshot in self?.received(snapshot: snapshot) }
@@ -59,7 +69,8 @@ final class AppController: NSObject, ObservableObject {
         unstackLegacyMarkersIfNeeded()
         if loaded.settings != settings { persist() }
         accessibilityGranted = AXIsProcessTrusted()
-        inputMonitoringGranted = CGPreflightListenEventAccess()
+        // KeyboardCapture.start() reports the actual event-tap capability.
+        inputMonitoringGranted = false
         if loaded.recoveredFromCorruption { statusMessage = "已备份损坏配置，并创建新的空配置" }
         installStatusItem()
         keyboard.start()
@@ -123,21 +134,33 @@ final class AppController: NSObject, ObservableObject {
 
     func refreshPermissions() {
         accessibilityGranted = AXIsProcessTrusted()
-        // Test the permission by recreating the same event tap used to catch
-        // keys, not solely by a preflight query which can lag behind TCC.
+        permissionRefreshPending = true
+        inputMonitoringGranted = false
+        statusMessage = "正在用真实键盘事件检查输入监控权限…"
+        // Recreate the exact tap that later receives marker keys. A stale TCC
+        // preflight must never make a granted app look unauthorized or block
+        // click mode and the overlay.
         keyboard.restart()
-        inputMonitoringGranted = CGPreflightListenEventAccess()
         configureTracking()
+        updateMenu()
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in
+            guard let self, self.permissionRefreshPending else { return }
+            self.permissionRefreshPending = false
+            self.updatePermissionStatus()
+            self.updateMenu()
+        }
+    }
+
+    private func updatePermissionStatus() {
         if accessibilityGranted && inputMonitoringGranted {
             statusMessage = "权限已可用：现在可显示并拖动浮标"
         } else if !accessibilityGranted && !inputMonitoringGranted {
-            statusMessage = "仍未检测到两项权限；关闭并重新打开 KeyClick 后再检查"
+            statusMessage = "仍未检测到两项权限；请在系统设置打开后再检查"
         } else if !accessibilityGranted {
             statusMessage = "输入监控已可用；仍需开启辅助功能权限"
         } else {
             statusMessage = "辅助功能已可用；仍需开启输入监控权限"
         }
-        updateMenu()
     }
 
     func bindCurrentFrontApplication() {
