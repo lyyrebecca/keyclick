@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh_CN</string>
+	<key>CFBundleDisplayName</key>
+	<string>键点 KeyClick</string>
+	<key>CFBundleExecutable</key>
+	<string>KeyClick</string>
+	<key>CFBundleIconFile</key>
+	<string>KeyClick.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.beka.keyclick</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>KeyClick</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<false/>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>键点需要辅助功能权限以跟踪目标窗口并在浮标位置执行一次点击。</string>
+	<key>NSInputMonitoringUsageDescription</key>
+	<string>键点需要输入监控权限以在点击模式中监听并拦截已映射的键盘按键。</string>
+</dict>
+</plist>

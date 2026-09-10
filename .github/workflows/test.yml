@@ -1,0 +1,21 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run core tests
+        run: ./test.sh
+      - name: Build Universal application
+        run: ./build.sh
+      - name: Verify the bundle
+        run: |
+          codesign --verify --deep --strict dist/KeyClick.app
+          test "$(lipo -archs dist/KeyClick.app/Contents/MacOS/KeyClick)" = "x86_64 arm64" || \
+            test "$(lipo -archs dist/KeyClick.app/Contents/MacOS/KeyClick)" = "arm64 x86_64"

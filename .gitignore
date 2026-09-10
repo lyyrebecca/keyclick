@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+dist/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+# User layouts and privacy grants stay local.
+config.json
+KeyClick.app
