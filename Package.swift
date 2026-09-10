@@ -15,13 +15,7 @@ let package = Package(
         .executableTarget(name: "KeyClickChecks", dependencies: ["KeyClickCore"], path: "Tests/KeyClickChecks"),
         .testTarget(
             name: "KeyClickCoreTests",
-            dependencies: ["KeyClickCore"],
-            swiftSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])],
-            linkerSettings: [
-                .unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks", "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks", "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/usr/lib"]),
-                .linkedFramework("Testing"),
-                .linkedFramework("_Testing_Foundation")
-            ]
+            dependencies: ["KeyClickCore"]
         )
     ]
 )
