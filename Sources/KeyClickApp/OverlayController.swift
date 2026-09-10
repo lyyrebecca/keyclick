@@ -150,14 +150,17 @@ final class MarkerDotView: NSView {
             halo.lineWidth = 2.5
             halo.stroke()
         }
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
+        // Keep this Core Text attribute dictionary deliberately minimal.
+        // macOS 26 intermittently throws an Objective-C exception while
+        // bridging the paragraph-style entry during rapid overlay redraws.
+        let font = NSFont.monospacedSystemFont(ofSize: max(12, bounds.height * 0.46), weight: .bold)
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: max(12, bounds.height * 0.46), weight: .bold),
-            .foregroundColor: NSColor.white,
-            .paragraphStyle: paragraph
+            .font: font,
+            .foregroundColor: NSColor.white
         ]
-        let rect = CGRect(x: 0, y: bounds.height * 0.24, width: bounds.width, height: bounds.height * 0.55)
+        let labelSize = (label as NSString).size(withAttributes: attributes)
+        let rect = CGRect(x: (bounds.width - labelSize.width) / 2, y: (bounds.height - labelSize.height) / 2,
+                          width: labelSize.width, height: labelSize.height)
         (label as NSString).draw(in: rect, withAttributes: attributes)
     }
 
