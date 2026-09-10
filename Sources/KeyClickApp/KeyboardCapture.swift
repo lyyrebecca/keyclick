@@ -17,6 +17,10 @@ final class KeyboardCapture: @unchecked Sendable {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var compatibilityMonitor: Any?
+    /// A listen-only Quartz tap is a last-resort capture path.  It can still
+    /// trigger a marker, but macOS will deliver the original keystroke to the
+    /// target app because this tap is not allowed to suppress it.
+    private var tapIsListenOnly = false
     private var armed = false
     private var escapeEnabled = false
     private var shortcut: ToggleShortcut = .controlOptionK
@@ -30,9 +34,18 @@ final class KeyboardCapture: @unchecked Sendable {
             let capture = Unmanaged<KeyboardCapture>.fromOpaque(refcon).takeUnretainedValue()
             return capture.handle(type: type, event: event)
         }
+        let userInfo = Unmanaged.passUnretained(self).toOpaque()
         tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
-                                eventsOfInterest: CGEventMask(mask), callback: callback,
-                                userInfo: Unmanaged.passUnretained(self).toOpaque())
+                                eventsOfInterest: CGEventMask(mask), callback: callback, userInfo: userInfo)
+        if tap == nil {
+            // Some macOS/TCC combinations reject an intercepting tap although
+            // they permit observing the exact same session event stream.
+            // Prefer this to losing every mapping (including letter keys such
+            // as R) just because interception is unavailable.
+            tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
+                                    eventsOfInterest: CGEventMask(mask), callback: callback, userInfo: userInfo)
+            tapIsListenOnly = tap != nil
+        }
         guard let tap else {
             installCompatibilityMonitor()
             DispatchQueue.main.async { self.onAvailabilityChanged?(false) }
@@ -41,7 +54,7 @@ final class KeyboardCapture: @unchecked Sendable {
         source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        DispatchQueue.main.async { self.onCompatibilityMonitorChanged?(false) }
+        DispatchQueue.main.async { self.onCompatibilityMonitorChanged?(self.tapIsListenOnly) }
         DispatchQueue.main.async { self.onAvailabilityChanged?(true) }
     }
 
@@ -49,6 +62,7 @@ final class KeyboardCapture: @unchecked Sendable {
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         source = nil
         tap = nil
+        tapIsListenOnly = false
         if let compatibilityMonitor { NSEvent.removeMonitor(compatibilityMonitor) }
         compatibilityMonitor = nil
     }
@@ -86,19 +100,20 @@ final class KeyboardCapture: @unchecked Sendable {
         let state = (armed, escapeEnabled, shortcut, markerByCode[keyCode])
         lock.unlock()
 
+        let mustPassThrough = tapIsListenOnly
         if matchesToggle(keyCode: keyCode, flags: event.flags, shortcut: state.2) {
             if type == .keyDown && !repeatPress { DispatchQueue.main.async { self.onToggle?() } }
-            return nil
+            return mustPassThrough ? Unmanaged.passUnretained(event) : nil
         }
         if state.1 && keyCode == 53 { // Escape
             if type == .keyDown && !repeatPress { DispatchQueue.main.async { self.onEscape?() } }
-            return nil
+            return mustPassThrough ? Unmanaged.passUnretained(event) : nil
         }
         if state.0, let markerID = state.3 {
             if type == .keyDown && !repeatPress {
                 DispatchQueue.main.async { self.onMarker?(markerID) }
             }
-            return nil
+            return mustPassThrough ? Unmanaged.passUnretained(event) : nil
         }
         return Unmanaged.passUnretained(event)
     }
