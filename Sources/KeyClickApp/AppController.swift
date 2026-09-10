@@ -29,6 +29,7 @@ final class AppController: NSObject, ObservableObject {
     private var state = InteractionState()
     private var currentSnapshot: WindowSnapshot?
     private var editRequested = false
+    private var finishEditInProgress = false
     private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem?
     /// The actual event-tap result is authoritative for Input Monitoring.
@@ -340,11 +341,16 @@ final class AppController: NSObject, ObservableObject {
     private func enterEditing() {
         disarm(message: "编辑浮标")
         state.beginEditing(); mode = state.mode
+        // `disarm()` configured the keyboard for standby just above.  Rebuild
+        // it once more after entering edit mode so Escape is immediately
+        // active; otherwise a newly-entered editor silently ignored Escape.
+        reconfigureKeyboard()
         refreshOverlay(); updateMenu()
     }
 
     func finishEditing() {
-        guard mode == .editing else { return }
+        guard mode == .editing, !finishEditInProgress else { return }
+        finishEditInProgress = true
         state.finishEditing(); mode = state.mode
         reconfigureKeyboard()
         // The old implementation merely changed the panel to a translucent
@@ -355,17 +361,32 @@ final class AppController: NSObject, ObservableObject {
         currentSnapshot = nil
         guard let profile = activeProfile,
               let target = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == profile.targetBundleIdentifier }) else {
+            finishEditInProgress = false
             statusMessage = "已完成编辑；目标应用未运行"
             updateMenu()
             return
         }
+        // A settings window can remain the key window for the rest of the
+        // first mouse action.  Order it out before activation so one click on
+        // “完成编辑” always returns to the configured app; users can reopen
+        // it from the menu bar or Dock whenever they need to edit again.
+        settingsWindow?.window?.orderOut(nil)
         statusMessage = "已完成编辑，正在返回 \(profile.name)"
         updateMenu()
         target.activate(options: [])
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in self?.tracker.refresh() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in
+            guard let self else { return }
+            self.finishEditInProgress = false
+            self.tracker.refresh()
+        }
     }
 
     func toggleArmed() {
+        // The configurable click-mode shortcut is also a reliable way to
+        // leave editing.  Do not leap straight from draggable dots into an
+        // armed overlay: finish the edit on this press, then let the next
+        // press start click mode.
+        if mode == .editing { finishEditing(); return }
         if mode == .armed { disarm(message: "已退出点击模式"); return }
         let permissionAllowsAttempt = settings.ignorePermissionStatus || (accessibilityGranted && inputMonitoringGranted)
         guard permissionAllowsAttempt,
