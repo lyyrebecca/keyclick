@@ -34,6 +34,10 @@ final class MarkerCanvasView: NSView {
 
     required init?(coder: NSCoder) { nil }
 
+    func flash(markerID: UUID) {
+        markerViews[markerID]?.flash()
+    }
+
     func render(markers: [MarkerBinding], markerSize: CGFloat, mode: OverlayMode) {
         self.markers = markers
         let oldIDs = Set(markerViews.keys)
@@ -116,6 +120,7 @@ final class MarkerDotView: NSView {
     private var fillColor = NSColor.systemPurple
     private var armed = false
     private var editable = false
+    private var isFlashing = false
     var onDragged: ((UUID, CGPoint) -> Void)?
 
     override var isFlipped: Bool { false }
@@ -131,11 +136,20 @@ final class MarkerDotView: NSView {
         needsDisplay = true
     }
 
+    func flash() {
+        isFlashing = true
+        needsDisplay = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(180)) { [weak self] in
+            self?.isFlashing = false
+            self?.needsDisplay = true
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         let inset: CGFloat = armed ? 1 : (editable ? 1.5 : 3)
         let circle = bounds.insetBy(dx: inset, dy: inset)
-        let color = fillColor.withAlphaComponent(armed ? 0.92 : (editable ? 0.96 : 0.52))
+        let color = (isFlashing ? NSColor.systemGreen : fillColor).withAlphaComponent(armed ? 0.98 : (editable ? 0.96 : 0.52))
         color.setFill()
         NSBezierPath(ovalIn: circle).fill()
         if armed || editable {
@@ -206,6 +220,8 @@ final class OverlayController {
     func setDragHandler(_ handler: @escaping (UUID, NormalizedPoint) -> Void) {
         canvas.onMarkerMoved = handler
     }
+
+    func flash(markerID: UUID) { canvas.flash(markerID: markerID) }
 
     func hide() { panel.orderOut(nil) }
 }

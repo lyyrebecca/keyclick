@@ -20,6 +20,9 @@ final class AppController: NSObject, ObservableObject {
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var inputMonitoringGranted = false
     @Published private(set) var compatibilityKeyboardMonitorActive = false
+    /// Shown in Settings so a failed-looking marker can be separated from a
+    /// missed key event. It is intentionally human-readable, not a hidden log.
+    @Published private(set) var lastClickDiagnostic = "尚未触发浮标"
 
     private let store: ProfileStore
     private let tracker = WindowTracking()
@@ -336,7 +339,7 @@ final class AppController: NSObject, ObservableObject {
             editRequested = true
             statusMessage = "正在切换到 \(profile.name)，随后自动显示可拖动浮标"
             updateMenu()
-            target.activate(options: [])
+            activateTarget(target)
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in self?.tracker.refresh() }
             return
         }
@@ -378,7 +381,7 @@ final class AppController: NSObject, ObservableObject {
         settingsWindow?.window?.orderOut(nil)
         statusMessage = "已完成编辑，正在返回 \(profile.name)"
         updateMenu()
-        target.activate(options: [])
+        activateTarget(target)
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in
             guard let self else { return }
             self.finishEditInProgress = false
@@ -501,15 +504,78 @@ final class AppController: NSObject, ObservableObject {
     }
 
     private func trigger(markerID: UUID) {
-        guard mode == .armed, let profile = activeProfile, let snapshot = currentSnapshot,
-              let marker = profile.markers.first(where: { $0.id == markerID }) else { return }
-        injector.click(at: ProfileLogic.point(in: snapshot.frame, normalized: marker.position))
+        guard mode == .armed else {
+            lastClickDiagnostic = "已收到浮标按键，但点击模式未开启"
+            return
+        }
+        inject(markerID: markerID, source: "键盘")
+    }
+
+    /// A deterministic one-shot test is available for every marker. It uses
+    /// the same coordinate conversion and injector as a real keyboard press,
+    /// which isolates placement problems from keyboard-capture problems.
+    func testMarker(_ markerID: UUID) {
+        guard let profile = activeProfile,
+              let target = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == profile.targetBundleIdentifier }) else {
+            lastClickDiagnostic = "测试失败：目标应用未运行"
+            statusMessage = lastClickDiagnostic
+            updateMenu()
+            return
+        }
+        statusMessage = "正在测试浮标：切回目标窗口后执行一次点击"
+        lastClickDiagnostic = statusMessage
+        updateMenu()
+        activateTarget(target)
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(320)) { [weak self] in
+            guard let self else { return }
+            self.tracker.refresh()
+            self.inject(markerID: markerID, source: "测试")
+        }
+    }
+
+    private func inject(markerID: UUID, source: String) {
+        guard let profile = activeProfile, let snapshot = currentSnapshot,
+              let marker = profile.markers.first(where: { $0.id == markerID }) else {
+            lastClickDiagnostic = "\(source)未执行：目标窗口不在前台或浮标不存在"
+            statusMessage = lastClickDiagnostic
+            updateMenu()
+            return
+        }
+        let point = ProfileLogic.point(in: snapshot.frame, normalized: marker.position)
+        let didPost = injector.click(at: point)
+        overlay.flash(markerID: markerID)
+        let coordinate = "(\(Int(point.x.rounded())), \(Int(point.y.rounded())))"
+        lastClickDiagnostic = didPost
+            ? "\(source)已命中 [\(marker.label)]，已向 \(coordinate) 注入一次左键点击"
+            : "\(source)未执行：无法创建点击事件"
+        statusMessage = lastClickDiagnostic
+        updateMenu()
     }
 
     private func move(markerID: UUID, to point: NormalizedPoint) {
         mutateActiveProfile { profile in
             guard let index = profile.markers.firstIndex(where: { $0.id == markerID }) else { return }
             profile.markers[index].position = point
+        }
+    }
+
+    /// macOS 14 deprecates `activateIgnoringOtherApps`, and in practice it
+    /// can leave this control panel key. LaunchServices activation is the
+    /// modern route and reliably moves the already-running target forward.
+    private func activateTarget(_ target: NSRunningApplication) {
+        guard let bundleURL = target.bundleURL else {
+            _ = target.activate(options: [])
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { [weak self] _, error in
+            guard let error else { return }
+            DispatchQueue.main.async {
+                self?.lastClickDiagnostic = "无法切换到目标窗口：\(error.localizedDescription)"
+                self?.statusMessage = self?.lastClickDiagnostic ?? "无法切换到目标窗口"
+                self?.updateMenu()
+            }
         }
     }
 
