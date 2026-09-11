@@ -148,7 +148,10 @@ public enum KeyMap {
     // equivalents.  Modifiers and Escape are deliberately excluded: modifiers
     // are reserved for the global toggle and Escape always leaves the mode.
     public static let ordered: [(UInt16, String)] = [
-        (18, "1"), (19, "2"), (20, "3"), (21, "4"), (22, "5"), (23, "6"), (24, "7"), (25, "8"), (26, "9"),
+        // These are physical ANSI virtual-key codes, not their numeric order.
+        // In particular 5/6 and 7/8/9 are non-sequential on macOS:
+        // 5 = 23, 6 = 22, 7 = 26, 8 = 28, 9 = 25.
+        (18, "1"), (19, "2"), (20, "3"), (21, "4"), (23, "5"), (22, "6"), (26, "7"), (28, "8"), (25, "9"),
         (0, "A"), (11, "B"), (8, "C"), (2, "D"), (14, "E"), (3, "F"), (5, "G"), (4, "H"), (34, "I"), (38, "J"), (40, "K"), (37, "L"), (46, "M"), (45, "N"), (31, "O"), (35, "P"), (12, "Q"), (15, "R"), (1, "S"), (17, "T"), (32, "U"), (9, "V"), (13, "W"), (7, "X"), (16, "Y"), (6, "Z"),
         (49, "Space"), (36, "Return"), (48, "Tab"), (51, "Delete"),
         (123, "←"), (124, "→"), (125, "↓"), (126, "↑"),
@@ -161,7 +164,7 @@ public enum KeyMap {
     }
 
     public static func aliases(for keyCode: UInt16) -> Set<UInt16> {
-        let keypad: [UInt16: UInt16] = [18: 83, 19: 84, 20: 85, 21: 86, 22: 87, 23: 88, 24: 89, 25: 91, 26: 92]
+        let keypad: [UInt16: UInt16] = [18: 83, 19: 84, 20: 85, 21: 86, 23: 87, 22: 88, 26: 89, 28: 91, 25: 92]
         if let alias = keypad[keyCode] { return [keyCode, alias] }
         return [keyCode]
     }

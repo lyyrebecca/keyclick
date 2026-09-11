@@ -76,7 +76,12 @@ final class AppController: NSObject, ObservableObject {
     func launch() {
         let loaded = store.load()
         settings = loaded.settings
-        if settings.schemaVersion < 2 { settings.schemaVersion = 2 }
+        // v3 corrects an old, incorrect macOS digit virtual-key table.  Repair
+        // existing numeric bindings before the keyboard capture is configured,
+        // so the fifth (and later numeric) marker reacts to the key printed on
+        // its keycap immediately after this update.
+        repairLegacyDigitKeycodesIfNeeded()
+        if settings.schemaVersion < 3 { settings.schemaVersion = 3 }
         unstackLegacyMarkersIfNeeded()
         if loaded.settings != settings { persist() }
         accessibilityGranted = AXIsProcessTrusted()
@@ -434,6 +439,24 @@ final class AppController: NSObject, ObservableObject {
         overlay.hide()
         statusMessage = "已回到键点设置，点击模式已退出"
         updateMenu()
+    }
+
+    /// KeyClick 1.1.6 accidentally treated the Mac virtual key codes for
+    /// 5–9 as a consecutive sequence.  They are not consecutive.  Labels are
+    /// written from that same table, so a label/key-code mismatch in a v2
+    /// profile is unambiguously a legacy mapping and can be repaired safely.
+    private func repairLegacyDigitKeycodesIfNeeded() {
+        guard settings.schemaVersion < 3 else { return }
+        let correctedCodes: [String: UInt16] = [
+            "5": 23, "6": 22, "7": 26, "8": 28, "9": 25
+        ]
+        for profileIndex in settings.profiles.indices {
+            for markerIndex in settings.profiles[profileIndex].markers.indices {
+                let marker = settings.profiles[profileIndex].markers[markerIndex]
+                guard let correctedCode = correctedCodes[marker.label], marker.keyCode != correctedCode else { continue }
+                settings.profiles[profileIndex].markers[markerIndex].keyCode = correctedCode
+            }
+        }
     }
 
     /// Repair only the old-build pattern in which every marker was created at

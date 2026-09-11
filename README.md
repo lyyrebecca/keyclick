@@ -15,7 +15,7 @@ KeyClick 是离线原生 macOS 工具。给某个应用的按钮放置可拖动�
 
 ## 下载与安装
 
-从 [Releases](../../releases/latest) 下载 `KeyClick-macOS-universal-v1.1.6.zip`，解压后把 `KeyClick.app` 拖入“应用程序”。首次启动在系统设置中打开：
+从 [Releases](../../releases/latest) 下载 `KeyClick-macOS-universal-v1.1.7.zip`，解压后把 `KeyClick.app` 拖入“应用程序”。首次启动在系统设置中打开：
 
 1. **辅助功能**：跟踪目标窗口，并在浮标中心单击；
 2. **输入监控**：在点击模式监听映射键，并仅吞掉已映射按键。
@@ -74,7 +74,7 @@ KeyClick 是离线原生 macOS 工具。给某个应用的按钮放置可拖动�
 ## 验证
 
 ```zsh
-./test.sh                    # Swift 单元测试 + 16 条核心断言
+./test.sh                    # Swift 单元测试 + 19 条核心断言
 ./run-harness.sh             # 本地四按钮交互测试靶场
 ./build.sh                   # Universal 2 .app + plist/签名检查
 codesign --verify --deep --strict dist/KeyClick.app

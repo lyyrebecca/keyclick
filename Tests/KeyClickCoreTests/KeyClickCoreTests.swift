@@ -49,3 +49,15 @@ import Testing
     var state = InteractionState(); state.arm(canArm: true); state.targetLost()
     #expect(state.mode == .standby)
 }
+
+@Test func digitBindingsUseActualMacVirtualKeyCodes() {
+    #expect(KeyMap.label(for: 18) == "1")
+    #expect(KeyMap.label(for: 21) == "4")
+    #expect(KeyMap.label(for: 23) == "5")
+    #expect(KeyMap.label(for: 22) == "6")
+    #expect(KeyMap.label(for: 26) == "7")
+    #expect(KeyMap.label(for: 28) == "8")
+    #expect(KeyMap.label(for: 25) == "9")
+    #expect(KeyMap.aliases(for: 23).contains(87)) // numeric keypad 5
+    #expect(KeyMap.aliases(for: 25).contains(92)) // numeric keypad 9
+}
